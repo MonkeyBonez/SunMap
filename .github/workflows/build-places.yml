@@ -1,0 +1,90 @@
+# Builds new places from Pipeline/metros.yaml and publishes them to Cloudflare Pages
+#. Inert until the owner sets, in the repo settings:
+#   variable  SUNMAP_PAGES_PROJECT        e.g. sunmap-tiles
+#   variable  SUNMAP_BUNDLE_BASE_URL      e.g. https://sunmap-tiles.pages.dev/
+#   secret    CLOUDFLARE_API_TOKEN    (Pages: Edit)
+#   secret    CLOUDFLARE_ACCOUNT_ID
+# A Pages deploy replaces the whole site, so the job first pulls the live site into
+# Server/ (publish.py --pull), builds what's missing, and deploys everything.
+name: build-places
+
+on:
+  # "Request this area" past the Worker's threshold (AUTO_BUILD=on): build that cell's city.
+  repository_dispatch:
+    types: [build-cell]
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "metros.yaml id to (re)build; empty = every unbuilt place"
+        required: false
+  schedule:
+    - cron: "0 9 * * 1"   # Mondays 09:00 UTC
+
+permissions:
+  contents: write        # commits the new metros.yaml entry for a requested cell
+
+concurrency:
+  group: build-places    # one build at a time: Pages deploys replace the whole site
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: vars.SUNMAP_PAGES_PROJECT != ''
+    runs-on: ubuntu-latest        # 4 vCPU / 16 GB on public repos, 2 vCPU / 7 GB on private
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - uses: actions/cache@v4
+        with:
+          path: Pipeline/cache/pbf
+          key: pbf-${{ hashFiles('Pipeline/metros.yaml') }}
+          restore-keys: pbf-
+      - name: Python deps
+        working-directory: Pipeline
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -q -r requirements.txt
+      - name: Pull the live site
+        working-directory: Pipeline
+        # A 404 on the manifest means no site yet (Server/ starts empty); any other failure
+        # fails the job, so a half-pulled Server/ is never published over the real site.
+        run: .venv/bin/python publish.py --pull "${{ vars.SUNMAP_BUNDLE_BASE_URL }}"
+      - name: Build
+        working-directory: Pipeline
+        env:
+          CELL: ${{ github.event.client_payload.cell }}
+          ONLY_ID: ${{ inputs.only }}
+        run: |
+          if [ -n "$CELL" ]; then
+            .venv/bin/python build_places.py --cell "$CELL" --max-minutes 240
+          elif [ -n "$ONLY_ID" ]; then
+            .venv/bin/python build_places.py --only "$ONLY_ID" --max-minutes 240
+          else
+            .venv/bin/python build_places.py --max-minutes 240
+          fi
+      - name: Remember a requested place
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          if ! git diff --quiet Pipeline/metros.yaml; then
+            git config user.name "sunmap-builder"
+            git config user.email "sunmap-builder@users.noreply.github.com"
+            git commit -m "metros.yaml: add a place requested from the app (${{ github.event.client_payload.cell }})" Pipeline/metros.yaml
+            git push
+          fi
+      - name: Publish
+        working-directory: Pipeline
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SUNMAP_PAGES_PROJECT: ${{ vars.SUNMAP_PAGES_PROJECT }}
+          SUNMAP_BUNDLE_BASE_URL: ${{ vars.SUNMAP_BUNDLE_BASE_URL }}   # the no-shrink guard compares against the live site
+        run: .venv/bin/python publish.py --target pages
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-logs
+          path: |
+            Pipeline/cache/build_log.jsonl
+            Pipeline/cache/build_logs/*.log

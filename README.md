@@ -1,0 +1,413 @@
+# Sun Map
+
+An iOS app that colours the sidewalks around you by sun: which side of which street is
+lit right now, or at any 15-minute step of the day, with the live sky (Open-Meteo, and a
+satellite-fog experiment) fading the palette as cloud takes the beam away. No
+destination, no route: just the map you are looking at, at any zoom. Zoomed in you see
+every sidewalk edge; zoomed out, sun by block.
+
+USA only for now. Split from the Like Water project (`MonkeyBonez/LikeWater`, tag
+`sunmap-split`), where the route, ETA and corridor work is parked. The bundle id is still
+`com.likewater.sunmap` and city files keep the `.lwbundle` extension and `LWB1` magic so
+installed copies and built tiles stay valid. Those are legacy names, not a dependency.
+
+## Running it
+
+```bash
+# once: build the San Francisco bundle (~7 min, downloads from Overpass)
+cd Pipeline && python3 -m venv .venv && .venv/bin/pip install osmnx pvlib folium
+.venv/bin/python build_bundle.py "San Francisco, California" -o ../Resources/sanfrancisco.lwbundle
+
+xcodegen generate
+open SunMap.xcodeproj             # scheme: SunMap
+```
+
+Tests: 99 across three suites (51 engine, 24 pipeline, 24 UI). The metro tests need
+`Server/` built. The UI tests need the local servers below (`Server/` on 8765, the
+rebuild fakes on 8766/8767, the staged hosting layouts on 8770/8771, the Worker on 8787):
+
+```bash
+cd Engine && swift test                                     # 51 engine tests, no simulator needed
+cd Pipeline && .venv/bin/python -m pytest tests -q          # 24 pipeline tests
+xcodebuild -project SunMap.xcodeproj -scheme SunMap -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test    # 24 UI tests
+./install_phone.sh                                          # phone: install + sideload seattle nyc la
+```
+
+On a device: the project signs with team `FMDJTXM4W7`; `xcodebuild -destination 'id=<udid>'`
+then `xcrun devicectl device install app --device <udid> <path>.app`.
+
+The app picks the bundle covering what is on screen. Shipped cities are found in the
+app bundle; other cities are fetched on demand from a bundle server, which is nothing
+more than the pipeline's output folder served over HTTP:
+
+```bash
+cd Server && python3 -m http.server 8765     # serves manifest.json + *.lwbundle
+# app: -bundleBaseURL http://<host>:8765/   (or the SunMapBundleBaseURL Info.plist key)
+```
+
+`manifest.json` (written by the pipeline) lists each city's bounding box and size; the
+app reads it only when the user is somewhere no local bundle covers, downloads that one
+file into Application Support, and uses it from then on. Nowhere with data at all: the
+app falls back to a SoMa demo position and says so.
+
+## Big cities: tiled metros
+
+New York, Los Angeles and Seattle are too big for one file (New York alone is 1.77M
+buildings and 1.34M graph nodes). `Pipeline/build_metro.py` builds each once, as one graph
+read from a Geofabrik state extract (Overpass cannot serve a city this size), and cuts it
+into ~4 km tiles that carry metro-wide node ids. The app downloads only the tiles within
+2.5 km of what you are looking at and stitches them into one graph in ~20 ms. See
+`LEARNINGS.md` §10 for what that took.
+
+```bash
+cd Pipeline
+mkdir -p cache/pbf && cd cache/pbf && for f in new-york washington california/socal; do
+  curl -LO https://download.geofabrik.de/north-america/us/$f-latest.osm.pbf; done; cd ../..
+# surveys (optional, used when present): data/nyc_planimetrics_sidewalk.gpkg (NYC Open Data
+# 52n9-sdep), data/seattle_sdot_sidewalks.gpkg (SDOT "Sidewalks (Active)")
+./build_metros.sh            # or: ./build_metros.sh nyc   → ../Server/<id>/
+cd ../Server && python3 -m http.server 8765    # app: -bundleBaseURL http://<host>:8765/
+```
+
+| | Seattle | New York | Los Angeles |
+|---|---|---|---|
+| Tiles / total | 31 / 64 MB | 76 / 175 MB | 109 / 290 MB |
+| First view downtown (4 tiles + far terrain) | 12.7 MB | 11.8 MB | 19.7 MB |
+| Sidewalk survey | SDOT lines | Planimetrics polygons | none (defaults) |
+| Time zone shown | Pacific | Eastern | Pacific |
+
+`Server/manifest.json` gains a `metros` entry per city, pointing at `<id>/metro.json`
+(tile index, time zone, demo point, build stats). Tiles are bundle format version 3:
+version 2 plus a per-node global id. A phone without a server can be given a metro
+directly: copy `Server/<id>/` into the app's `Library/Application Support/Cities/<id>/`
+(`xcrun devicectl device copy to --domain-type appDataContainer …`).
+
+## Hosting (free; the owner publishes)
+
+Nothing is public yet. Everything below runs locally; going live is three owner steps.
+
+| Piece | Where | Cost | Status |
+|---|---|---|---|
+| Tiles + manifest | Cloudflare Pages, `sunmap-tiles.pages.dev` | free (25 MiB/file, 20k files, unlimited bandwidth) | `publish.py --dry-run` stages it: 267 files, 615 MB, largest 9 MiB |
+| "Request this area" | Worker `sunmap-api.<you>.workers.dev` + KV (`Worker/`) | free (100k req/day) | runs under `wrangler dev`; `Worker/smoke.sh` |
+| New places | GitHub Actions `build-places.yml` (weekly, manual, or a Worker dispatch) or the Mac | free minutes | inert until repo vars/secrets are set |
+| Weather proxy | the same Worker, `/sky` | free tier | **off** (`SKY_PROXY`), owner's scaling lever |
+
+Go live:
+1. `npx wrangler login`, then `cd Pipeline && .venv/bin/python publish.py --target pages`
+   (creates/updates the Pages project `sunmap-tiles`; `SUNMAP_PAGES_PROJECT` overrides).
+2. Build the app with `SUNMAP_BUNDLE_BASE_URL=https://sunmap-tiles.pages.dev/`.
+3. Optional: `cd Worker && npx wrangler kv namespace create REQUESTS` (id into
+   `wrangler.toml`), `npx wrangler secret put EXPORT_TOKEN`, `npx wrangler deploy`, and build
+   the app with `SUNMAP_COVERAGE_REQUEST_URL=https://sunmap-api.<you>.workers.dev/coverage-request`.
+For cloud builds set repo variables `SUNMAP_PAGES_PROJECT`, `SUNMAP_BUNDLE_BASE_URL` and secrets
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`. For a tap to start a build by itself, set the
+Worker's `AUTO_BUILD=on` and `wrangler secret put GITHUB_TOKEN` (fine-grained, Actions: write).
+
+Test locally (what the UI tests use): `cd build/publish && python3 -m http.server 8770` (staged
+Pages site), `publish.py --target s3 --local-dir build/s3-layout` + `:8771` (bucket layout),
+`cd Worker && cp .dev.vars.example .dev.vars && npx wrangler dev --local --port 8787`.
+If `npx` fails with "Cannot find module …restore-node-options.cjs", run it with
+`env -u NODE_OPTIONS` (a terminal wrapper's stale preload).
+
+## New places
+
+`Pipeline/metros.yaml` lists every place (USA only for now); `build_places.py` builds what
+isn't in the manifest (newest dated Geofabrik extract, `/usr/bin/time -l`, a line per build
+in `cache/build_log.jsonl`); `--cell LAT,LON` turns a requested cell into an entry (Nominatim,
+US only) and builds it; `requests_to_places.py` turns the Worker's export into entries to
+review. Portland was the first: 6.9 min, 2.35 GB peak, 39 tiles, 70 MB.
+
+## The sun field: score tiles and blocks
+
+The sun view is scored on a fixed lattice (`SunLattice`, the metro tile grid and
+subdivisions), tile by tile, through a cache keyed by place build, tile and 15-minute
+slot: a pan scores only what came into view and
+the ring around the screen is scored ahead in the background; overlays are diffed per tile.
+Up to 2.5 km across the screen it is every sidewalk edge; beyond, **sun by block** —
+cells of 70 m to 4.4 km (36–72 across) coloured by the sunny share of the 12 longest edges
+per cell, each metro tile scored alone from its own file so a whole city fits in memory
+(LEARNINGS §13 has the seam error). `suntool blocks --metro Server/nyc --center LAT,LON
+--at ISO --level 2` measures one tile and compares tile-alone with the stitched neighbourhood.
+
+## Coverage, builds and eviction
+
+- **Which place**: the box spanned by the screen's corners picks the
+  place most of it falls in; a field is `covered` or `partial`; nothing built → a banner
+  ("No sun data here yet", nearest built place, sky kept) and, when `SunMapCoverageRequestURL`
+  is set, "Request this area".
+- **Builds**: `metro.json` and the manifest carry `built`; server builds land in
+  `Cities/<id>/<buildKey>/`, sideloads in `Cities/<id>/`. A new build serves after its first
+  successful stitch (`.ready`); then older copies are deleted. Never downgraded.
+- **Cache**: `Cities/ledger.json`, LRU, 400 MB (`-uiTestCacheCapMB`), only when a server
+  can give files back; the ring around each stitch is prefetched on Wi-Fi.
+- **Config**: `SUNMAP_BUNDLE_BASE_URL` / `SUNMAP_COVERAGE_REQUEST_URL` build settings → Info.plist
+  `SunMapBundleBaseURL` / `SunMapCoverageRequestURL` (empty = unset). `-bundleBaseURL` and
+  `-coverageRequestURL` override them at launch.
+
+## Satellite fog (proof of concept)
+
+The sky layer is a forecast (HRRR via Open-Meteo). Whether observing the fog from GOES-West
+beats it is being measured before anything is built (LEARNINGS §9.6, BACKLOG):
+
+```sh
+cd Pipeline
+.venv/bin/pip install xarray netCDF4 pyyaml   # once
+.venv/bin/python goes_poc.py                  # latest scan → per-cell clear/low/mid_high + beam
+.venv/bin/python goes_log.py                  # one log row (GOES + Open-Meteo + SFO/OAK METAR)
+.venv/bin/python goes_report.py               # after ≥ 10 days: agreement, who's right, decision
+```
+
+The logger runs hourly in GitHub Actions (`.github/workflows/goes-log.yml`, SF daytime,
+four scans per run) and appends to the `goes-log` branch, whose `REPORT.md` is the running
+verdict — no laptop needed. `Pipeline/launchd/com.sunmap.goes-log.plist` is the same
+logger every 15 min on a Mac (optional; the report merges both: `goes_report.py --log-dir
+cache/goes_log --log-dir ../goes-log-checkout/goes_log`).
+
+## The bundle
+
+`Pipeline/build_bundle.py` takes a place name — nothing in it is specific to one city —
+and writes a single binary file (`Pipeline/bundle_format.py`, version 2). San Francisco:
+
+| | |
+|---|---|
+| Nodes / edges | 266,222 / 335,871 undirected |
+| Sidewalk edges | 152,442 — 51,246 drawn in OSM, **101,196 synthesised** |
+| Crossings | 49,377 (30,573 OSM + 18,804 synthesised at intersections) |
+| Buildings | 164,080 footprints from **Overture** (96% with a height; 8% USGS Lidar-measured) |
+| Terrain | 10 m grid, 1,166 × 1,327 cells, from AWS Terrain Tiles |
+| **Size** | **29.7 MB** (target 40) · loads in ~800 ms, once, off the main actor |
+
+### Where the data comes from, and what was checked
+
+| Source | Verdict |
+|---|---|
+| **OpenStreetMap** (osmnx) | The walking graph. Per-side sidewalks exist for only 24% of SF edges. |
+| **DataSF Sidewalk Widths (2014)** | 16,174 street segments from an AECOM survey: which streets have sidewalks (26% have none), on which side, and how wide (median 12 ft). Joins to OSM streets at a **median 1 m**; 87% of SoMa street segments match. Used for presence and widths. |
+| **Overture Maps — buildings** | 164k SF footprints, **96% with height** vs OSM's 71%, merging OSM, USGS Lidar and Microsoft ML. Adopted. |
+| **Overture Maps — transportation** | 2,714 of 2,728 SoMa segments are OSM-sourced; the sidewalk count is identical to OSM's; **0% of roads carry a width**. Nothing to gain. |
+| **AWS Terrain Tiles** | Free, no key, 7.6 m/px. Checked against known SF elevations (Nob Hill 100.6 m, Ferry Building 2.5 m). Adopted; USGS 3DEP 1 m exists but is overkill for shadows. |
+| **OpenSidewalks / Tile2Net** | No San Francisco data (Seattle; Boston, NYC, DC). |
+| **osm2streets, sidewalkify** | Rust with unpublished Python bindings; a 2018 package pinned to old GeoPandas. Wrote the synthesis instead. |
+| **Apple MapKit** | Draws sidewalks and 3D buildings in SF but exposes none of it: no elevation, height, or sidewalk API. |
+| **Google Elevation API** | Works, paid; the free terrain tiles are equivalent. |
+| **Google Solar API** | Returns a DSM and *hourly shade rasters* — Google has precomputed what this app computes — but per paid call over a ~100 m radius. Not a data source; a possible validation oracle. |
+
+### Sidewalk synthesis (`Pipeline/sidewalks.py`)
+
+For every street that DataSF says has a sidewalk (or that OSM does not mark `sidewalk=no`),
+offset the centreline to each kerb by half the roadway width plus half the surveyed
+sidewalk width, join consecutive offsets into corner nodes (standard polyline offsetting),
+add a crossing across each street at every intersection, and link the centreline node to
+its corners wherever something else attaches there so nothing is stranded. Sides that OSM
+already drew are left alone; once both kerbs have a sidewalk the centreline is removed.
+
+Roadway widths come from DataSF's Better Streets class (Downtown Commercial 18 m …
+Alley 6 m) or OSM's `lanes`; only 1% of SF streets carry an OSM `width` tag, so a
+per-class default is unavoidable. For shadows it barely matters — shadow reach is tens
+of metres, a kerb 2 m off is noise.
+
+Measured effect, length-weighted, as the share of kerb-metres that have their own
+sidewalk edge (`suntool coverage`):
+
+| Area | OSM as-is | After synthesis |
+|---|---|---|
+| SoMa (3rd & Howard) | 57% | **74%** |
+| Financial District | 65% | **85%** |
+| Mission (24th & Mission) | 49% | **84%** |
+| Sunset (Judah & 30th) | 72% | **76%** |
+| Nob Hill | 46% | **81%** |
+| Castro | 45% | **79%** |
+
+The remainder is service roads, alleys and streets the survey marks as having no
+sidewalk. Synthesis leaves 0.14% of connected nodes stranded (they are dropped);
+the largest component is kept, a leftover from routing (BACKLOG: sun-only bundle diet).
+
+### Terrain
+
+Hills shade too. Measured as the share of edges whose sun bucket changes when terrain is
+switched off (`suntool sun --no-terrain`), at low sun:
+
+| Area | 8:30 am (el 17°) | 6:00 pm (el 12°) | Dec 3:30 pm (el 12°) |
+|---|---|---|---|
+| SF · Twin Peaks east slope | 18% | **33%** | **37%** |
+| Berkeley Hills | 19% | 20% | 20% |
+| SF · Nob Hill | 10% | 8% | 3% |
+| Downtown Berkeley | 6% | 2% | 8% |
+| SF · SoMa (flat) | 6% | 4% | 3% |
+
+Under Twin Peaks in the evening a third of the sidewalks are in hill shadow that a flat
+model calls sunny. On flat ground the few percent that change come from a roof being
+`ground + height` rather than just `height`.
+
+### A third city: Moorpark
+
+Suburban Ventura County, no survey, thin OSM: 69% of walkable edges were bare street
+centrelines and only 19% sidewalk ways. `build_bundle.py "Moorpark, California"` gives
+27,059 nodes, 18,667 synthesised sidewalk edges, 11,558 Overture buildings, terrain
+127–386 m, **3.0 MB**, 36 stranded nodes.
+
+| Area | kerbs with a sidewalk edge | of which synthesised |
+|---|---|---|
+| Downtown (High St & Moorpark Ave) | 86% | 95% |
+| Moorpark College area | 91% | 93% |
+| Campus Park | 98% | 100% |
+| Tierra Rejada / Peach Hill | 72% | 80% |
+
+Nearly all of it is synthesis — which is the point: a place OSM has barely touched still
+gets per-side sidewalks.
+
+**Hills versus houses in Moorpark.** The intuition that hills matter more than buildings
+in a low-rise town turns out to be wrong here, and measurably so. The terrain horizon from
+downtown is 6.6° to the north (Walnut Canyon) but 0–2° through the entire arc the sun
+actually travels, south through west: the valley opens toward Camarillo, so the setting
+sun looks *down* it. Fetching terrain 3 km beyond the city (now the default, so hills
+outside a city polygon can shade into it) changed **zero** sidewalk buckets in Moorpark
+across four areas and four times of day. Aiming the sun due north by hand shades 134 of
+145 edges — the hills are real; the sun just never goes there.
+
+Houses are what shade Moorpark sidewalks: a 5 m house 8 m from the kerb blocks the sun
+below ~32°. Which exposed a real bug — 19% of Moorpark buildings had no measured height
+and were defaulted to a flat 10 m, twice a real house. Unknown heights now take the
+median of measured neighbours within 150 m (`Pipeline/overture.py`, tested in
+`Pipeline/tests/test_heights.py`). Effect: **2–11% of sidewalk edges** in Moorpark had
+been wrongly shaded (Peach Hill at 6:30 pm: 11%), all now sunnier. In San Francisco the
+same fix moves under 0.4% — tall buildings dominate there.
+
+**Gated streets.** osmnx drops `access=private` by default, which removed every gated
+tract and HOA street in Moorpark (Elkton Court's whole neighbourhood; nearest node 104 m
+away). They are kept now and flagged `FLAG_PRIVATE`, so their sidewalks get sun too.
+
+**Midday the field barely changes**, and that is correct: with 5 m houses and 11 m
+roadways, a sun above ~40° shades almost no sidewalk. Downtown Moorpark changes 20% of
+buckets between 7:30 and 9:00, 33% between 18:00 and 18:30, and 1–4% per step from
+10:30 to 15:00. What you feel at noon is tree shade, which the model does not have.
+
+**Trees are not modelled**, and in a suburb they are probably the largest remaining
+error. USGS NLCD tree-canopy (30 m, national, free) is the scalable input; not done. The caveat is the flip side of Berkeley's: with only 62 streets
+tagged `sidewalk=no` and no survey, synthesis assumes both kerbs wherever OSM is silent.
+Suburban California tracts mostly do have them; rural roads at the edges may not.
+
+Overpass was the only hard part. Two mirrors hung mid-query; the pipeline now times each
+request out at 3 minutes and rotates mirrors, and recovered both.
+
+### A second city
+
+`build_bundle.py "Berkeley, California"` with no width survey: 55,642 nodes, 29,367
+synthesised sidewalk edges, 51,732 Overture buildings, terrain to 529 m, **7.1 MB**, 24
+stranded nodes. Downtown reaches 83% kerb coverage; the Berkeley Hills only 23%, because
+OSM tags those streets `sidewalk=no` — which is true, and the synthesis respects it.
+
+## The engine
+
+`Engine/` is the SwiftPM package `SunMapEngine`, so its tests run on macOS in seconds
+without a simulator. Solar position, the shadow scorer, bundle reading, tile stitching,
+the sun lattice and the sky model live here; the app adds loading, caching and drawing.
+
+**Sun.** NOAA solar position (own implementation, no dependency), then for each edge five
+sample points, each casting a ray toward the sun azimuth. First the ray walks the terrain
+grid in 25 m steps out to where the city's tallest hill (300 m) could still rise above the
+sun line; then it walks a 100 m grid of building footprints (Amanatides–Woo). A point is
+shaded when the ground, or some roof at `ground + height`, rises above the sun line from
+the walker's own ground level — so a tall building downhill may not shade at all. Edge
+score is the lit fraction, bucketed at 0.3 and 0.7.
+
+Accuracy is checked against **pvlib's NREL SPA** implementation (accurate to ~0.0003°),
+regenerated by `Pipeline/solar_vectors.py` over four sites and ten instants: worst
+elevation error **0.093°**, worst azimuth error **0.007°**. The target was 0.5°.
+
+Performance, 1,761 edges around 3rd & Howard, swept across the day:
+
+| Build | Worst case (2,231 edges, with terrain) |
+|---|---|
+| Debug | 180 ms |
+| Release | 4.5 ms |
+
+Budget was 200 ms for 2,000 edges.
+
+## Checking it on a map
+
+`Engine`'s `suntool` dumps exactly what the app computes as GeoJSON, and
+`Pipeline/check_maps.py` renders it with Folium — so the check is of the shipping code,
+not a second implementation that might agree by accident.
+
+```bash
+swift build -c release --product suntool --package-path Engine
+Engine/.build/release/suntool sun --center 37.7786,-122.3989 --radius 500 --at 2026-09-23T23:00:00Z \
+  --out check/sun4pm.geojson --bundle Resources/sanfrancisco.lwbundle
+cd Pipeline && .venv/bin/python check_maps.py ../check ../check/maps
+```
+
+## What the tests pin down
+
+| Suite | Test | Asserts |
+|---|---|---|
+| Engine | `testMatchesNRELSolarPositionAlgorithm` | 40 sun positions within 0.5° of SPA |
+| Engine | `testPeakElevationAtEquinoxMatchesLatitude` | peak elevation = 90 − \|lat\| at three latitudes |
+| Engine | `testDaylightWindowBracketsTheInstant…` | the scrubber's window is right after sunset too |
+| Engine | `testShadowLengthFollowsTheElevationAngle` | a 20 m wall shades exactly 20 m at 45° |
+| Engine | `testOppositeSidesOfAStreetDisagree` | one side lit, the other not — the whole point |
+| Engine | `testCentrelinesCannotAnswerWhichSideIsSunny` | measures the centreline's bias and how often the two kerbs differ |
+| Engine | `testReadsWhatThePipelineWrote` | binary format contract, both directions |
+| Engine | `testSunFieldPerformanceForASoMaBlock` | worst case across the day inside budget |
+| SunMap | `testSoMaSunThroughTheDay` | the field actually changes through the day |
+| SunMap | `testSunDownShowsTheMessage` | "Sun is down." |
+| SunMap | `testScrubberMovesTheSun` | 15-minute steps move the sun; Now leaves the pinned time |
+| SunMap | `testOvercastFlattensTheSky` | overcast preset: "no direct sun", beam 0, flat palette |
+| SunMap | `testFogWestSplitsTheCity` | two weathers at once: fog in the Sunset, clear in the Mission, each side told which it is in |
+| SunMap | `testSkyPickerOverridesTheForecast` | Auto/Sunny/Partly/Cloudy picker overrides and restores |
+| SunMap | `MetroUITests` (3) | fresh install downloads Seattle's tiles, relaunch reuses them; New York shows "12:00 PM EST"; LA paints |
+| Engine | `ScaleTests` | tiles stitch back into the identical edge set; terrain mosaic; 430 m tower shades 600 m away; far-field ridge; no phantom plateau; edges in a box |
+| Engine | `MetroTests` (4) | real Seattle/NYC/LA tiles: no seams, Staten Island present, Central Park South winter shadows, LA terrain |
+| Engine | `SunTilesTests`, `MetroIndexTests` | the sun lattice and detail levels; the block sampler; build keys, newer-than, extends-beyond |
+| SunMap | `CoverageUITests`, `BuildPinningUITests`, `HostingUITests` | uncovered/partial banners, request button; server rebuilds and eviction; the Pages and S3 layouts and the Worker |
+| Pipeline | `test_scale.py` (8) | CSR, footprint flattening, NYC polygon rays, per-way survey aggregation, Seattle line survey, shared terrain lattice |
+| Engine | `SkyTests` (7) | clear-sky reference vs model clear days; the 2026-09-15 fog-day fixture (coast <0.1, Mission >0.8); interpolation; cell dedupe |
+| SunMap | `testDownloadsBerkeleyOnDemand` | with the shipped Berkeley hidden, the app finds it in the server manifest, downloads it, paints it, and reuses the file on relaunch |
+| Engine | `testSecondCityBundleIsComplete` | a city built with no width survey loads, synthesises, and carries 500 m terrain |
+| Engine | `testHillsShadeAtLowSunAngles` | a 40 m rise 90 m away blocks a 12° sun and not a 40° one |
+| Engine | `testBuildingGroundLevelMatters` | a roof is ground + height, so a building downhill may not shade |
+
+## What this build found
+
+- **Only 24% of edges are per-side sidewalk geometry**, not the 34% a first pass suggested.
+  The flag was conflating `footway=sidewalk` (a real line per side, 51,247 edges) with a
+  street centreline tagged `sidewalk=both` (22,277 edges) — the latter records that
+  sidewalks exist but is still one line down the middle of the road and cannot tell the
+  sides apart. They are separate flags now, and a test asserts they never overlap.
+  By neighbourhood: Mission 47%, Sunset 37%, SoMa 26%, Financial District 25%.
+- **Nothing is filtered out.** All 216,539 edges are sun-scored; the sidewalk flag feeds
+  diagnostics only. The open question was whether
+  scoring a road *centreline* stands in for its kerbs. Measured over the 51 SoMa
+  centrelines OSM says have sidewalks, comparing each against points offset 8 m to
+  either side: the centreline is only mildly optimistic (+1% to +9% of an edge in sun,
+  because shadow reach dwarfs an 8 m offset) and lands in the same bucket as at least
+  one kerb 88–98% of the time. **But the two kerbs land in different buckets 43–51% of
+  the time.** So a centreline is not wrong so much as unable to answer the question the
+  user is asking — "is *my* side sunny" — on about half the streets where sidewalks are
+  not drawn separately. `testCentrelinesCannotAnswerWhichSideIsSunny` pins this down,
+  and `suntool sunbias` reproduces it.
+
+## Known gaps
+
+- **Seven places.** San Francisco, Berkeley and Moorpark ship in the app; New York, Los Angeles
+  and Seattle are tiled metros served from `Server/` (there is no public server yet — the
+  phone gets them by sideloading); Portland is built too. Building one is a single
+  command and 5–10 minutes (`build_places.py`).
+- **Where OSM says `sidewalk=no`, there is no sidewalk edge** — the Berkeley Hills are
+  23% covered for that reason. That is the data being right, but it means the sun layer
+  there colours the road.
+- **Roadway widths are class defaults** where the survey has none (all of Berkeley). Fine
+  for shadows; a couple of metres off for anything that cares about exact kerb position.
+- **No roof shapes or trees.** Terrain is in; a flat-topped extrusion is still what a
+  building is.
+- **XCUITest cannot drag a SwiftUI slider** in this configuration; the scrubber is tested
+  through its 15-minute step buttons.
+- **Weather is a forecast, not an observation.** Beam strength comes from HRRR via
+  Open-Meteo (15-min DNI, ~3 km cells; see `LEARNINGS.md` §9). It resolves the SF fog
+  gradient but it can be an hour off on when the fog burns. `suntool sky --center LAT,LON
+  [--at ISO]` prints exactly what the app would say.
+- **The real test is still outdoors.** Everything here says the model is self-consistent,
+  matches NREL, and now knows about hills. Whether the bright side matches your skin on
+  Howard St is the walk test.

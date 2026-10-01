@@ -35,7 +35,8 @@ with the local servers in README), Worker smoke.
 
 ## Next
 
-To be decided with the owner. Candidates already written up in `BACKLOG.md`: the GOES
+To be decided with the owner. `REVIEW.md` holds open questions to review first
+(data quality and what it means for automatic builds). Candidates already written up in `BACKLOG.md`: the GOES
 build-out (after the verdict), going live on Pages, the sun-only bundle diet, sky per cell
 and cross-border shadows in the block view, tree canopy. The five design directions from
 the Like Water round (claude.ai/artifact/FXqMrQQje7dSRxgGLqUoJX) were drawn for the walk

@@ -61,6 +61,11 @@ record what it taught in `LEARNINGS.md`.
   the environment.
 - Commit and push to `MonkeyBonez/SunMap` (private) after each tested step.
 
+## `REVIEW.md` is the review list
+
+Open questions the owner wants to come back to. Don't act on them unasked; when one is
+decided, move it to `BACKLOG.md` or `LEARNINGS.md` and delete it there.
+
 ## Current plan
 
 `PLAN.md` holds where Sun Map stands and what's next. Work from it; when a milestone

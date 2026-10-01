@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Nightly new-place builds at 02:00 (PLAN.md §2 F): builds every metros.yaml entry not
+<!-- Nightly new-place builds at 02:00: builds every metros.yaml entry not
      yet in Server/manifest.json, then publishes to Cloudflare Pages. NOT installed by
      default — install only after publishing works by hand (README "Hosting"):
        cp Pipeline/launchd/com.sunmap.build.plist ~/Library/LaunchAgents/

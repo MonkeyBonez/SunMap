@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- GOES fog POC logger, every 15 min (PLAN.md §2 E). Install:
+<!-- GOES fog POC logger, every 15 min. Install:
        cp Pipeline/launchd/com.sunmap.goes-log.plist ~/Library/LaunchAgents/
        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sunmap.goes-log.plist
      Remove:

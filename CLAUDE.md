@@ -54,7 +54,7 @@ record what it taught in `LEARNINGS.md`.
 - Never stitch tiles of two builds; never evict files a configured server can't give back.
 - The bundle format keeps its legacy names (`.lwbundle`, magic `LWB1`) and the app keeps
   bundle id `com.likewater.sunmap`, so built tiles and installed copies stay valid.
-- USA only for now. The owner owns scaling plans (weather proxy, paid keys, rate limits):
+- USA only for now, except Seoul and Singapore (owner, 2026-10-08; LEARNINGS §15). The owner owns scaling plans (weather proxy, paid keys, rate limits):
   write triggers and options, don't build them.
 - Publishing (Pages, Worker deploy) is the owner's step. Agents stage and test locally
   (`publish.py --dry-run`, `wrangler dev`) and stop there. Credentials only come from

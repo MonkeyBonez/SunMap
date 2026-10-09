@@ -1,6 +1,6 @@
 # GOES fog POC — running report
 
-Updated 2026-10-09T01:16+00:00. Daytime (9 am–5 pm Pacific) scans only.
+Updated 2026-10-09T07:28+00:00. Daytime (9 am–5 pm Pacific) scans only.
 
 | metric | value |
 |---|---|

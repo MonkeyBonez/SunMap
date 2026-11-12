@@ -722,6 +722,13 @@ but removing both the sky picker and any sun/speed slider.
   UI checks resolve **340 Fremont St**, **LinkedIn / 222 2nd St**, and a **Chase Center**
   autocomplete suggestion into routable SF endpoints; coordinate entry still works
   offline. Route fitting leaves room for both the top inputs and bottom cards.
+- **A fixed demo origin must be initialized, not a delayed location fallback.** The
+  prototype now starts at **222 2nd St** (`37.786325,-122.3982399`, verified by native
+  `MKLocalSearch` for the address), with From prefilled and the map already centered.
+  Initializing a deliberate center prevents a later GPS fix from replacing it, while
+  preserving user panning and explicit "Use my location." The launch UI test checks
+  the scored center, routing after entering only a destination, and reset on relaunch;
+  it passes in the simulator and on the connected iPhone.
 
 ## 7. Testing lessons that cost us
 

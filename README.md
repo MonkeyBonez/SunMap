@@ -8,6 +8,8 @@ or **Sunniest** (orange) in the horizontal bottom row. Each card shows estimated
 and sidewalk sunlight; all paths are previewed, with the selected path drawn on top.
 The existing time slider remains and defaults to **1 PM today in San Francisco**.
 There is no sky picker or sun/speed slider: this demo always assumes clear sky.
+Every launch centers on **222 2nd St, San Francisco** and pre-fills that starting point,
+regardless of the phone's location. The map can still be panned and the start edited.
 
 Routes come from the bundled public walking graph, not online directions. Native Apple
 place search requires connectivity; entering `latitude,longitude` works offline.

@@ -3,6 +3,11 @@ import MapKit
 import SunMapEngine
 
 struct WalkPlace: Identifiable {
+    static let prototypeStart = WalkPlace(
+        name: "222 2nd St",
+        coordinate: CLLocationCoordinate2D(latitude: 37.786325, longitude: -122.3982399),
+        subtitle: "San Francisco, CA")
+
     let id = UUID()
     let name: String
     let coordinate: CLLocationCoordinate2D
@@ -55,7 +60,7 @@ actor WalkService {
 
 @MainActor
 final class WalkPlanner: ObservableObject {
-    @Published var start: WalkPlace?
+    @Published var start: WalkPlace? = .prototypeStart
     @Published var end: WalkPlace?
     @Published var previews: [WalkPreview] = []
     @Published var selected: WalkKind = .balanced
@@ -213,7 +218,7 @@ struct WalkEndpointBar: View {
     let onPick: (WalkPlace, Bool) -> Void
     let onEditingChange: (Bool) -> Void
     @StateObject private var search = WalkPlaceSearch()
-    @State private var startText = ""
+    @State private var startText = WalkPlace.prototypeStart.name
     @State private var endText = ""
     @FocusState private var focused: Endpoint?
     private enum Endpoint: Hashable { case start, end }

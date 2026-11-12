@@ -1,6 +1,26 @@
 import XCTest
 
 final class WalkPlannerUITests: XCTestCase {
+    func testLaunchDefaultsTo222SecondStreetAndRoutesWithoutEnteringStart() {
+        let app = XCUIApplication()
+        app.launch()
+        let start = app.textFields["walkStartInput"]
+        XCTAssertTrue(start.waitForExistence(timeout: 30))
+        XCTAssertEqual(start.value as? String, "222 2nd St")
+        let stats = app.staticTexts["sunStats"]
+        let centered = NSPredicate(format: "value BEGINSWITH %@", "37.7863,-122.3982")
+        expectation(for: centered, evaluatedWith: stats)
+        waitForExpectations(timeout: 60)
+        pick(app, endpoint: "walkEnd", query: "37.7936,-122.3958")
+        XCTAssertTrue(app.buttons["routeFastest"].waitForExistence(timeout: 120), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["walkError"].exists)
+        app.terminate()
+        app.launch()
+        XCTAssertEqual(start.value as? String, "222 2nd St")
+        expectation(for: centered, evaluatedWith: stats)
+        waitForExpectations(timeout: 60)
+    }
+
     private func pick(_ app: XCUIApplication, endpoint: String, query: String) {
         let input = app.textFields["\(endpoint)Input"]
         XCTAssertTrue(input.waitForExistence(timeout: 10))

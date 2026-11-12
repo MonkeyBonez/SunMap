@@ -16,7 +16,7 @@ final class SunMapModel: ObservableObject {
     }()
     @Published var daylight: (sunrise: Date, sunset: Date)?
     @Published var overlayVersion = 0
-    @Published var center: CLLocationCoordinate2D?
+    @Published var center: CLLocationCoordinate2D? = WalkPlace.prototypeStart.coordinate
     @Published var isComputing = false
     /// True when the user is not in the bundled city, so the map is showing the demo area.
     @Published var outsideCity = false
@@ -52,8 +52,8 @@ final class SunMapModel: ObservableObject {
     private var task: Task<Void, Never>?
     private var ticker: Timer?
 
-    /// Fallback when the simulator has no fix: 3rd & Howard, SoMa.
-    static let fallbackCenter = CLLocationCoordinate2D(latitude: 37.78415, longitude: -122.40060)
+    /// The prototype always opens at 222 2nd St, not at the phone's location.
+    static let fallbackCenter = WalkPlace.prototypeStart.coordinate
 
     init() {
         location.start()

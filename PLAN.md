@@ -9,6 +9,8 @@
 - [x] Show Balanced only for a genuine middle trade-off: fewer displayed minutes than
   Sunniest and more displayed sunlight than Fastest; omit it otherwise.
 - [x] Keep the time scrubber, default to 1 PM Pacific; remove sky picker, assume clear sky.
+- [x] Always open centered on 222 2nd St, with that starting point prefilled; retain
+  editable endpoints and explicit "Use my location."
 - [x] Engine and simulator checks; signed installation and the full selection flow on
   the connected iPhone. Main remains unchanged.
 

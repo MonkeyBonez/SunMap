@@ -9,7 +9,11 @@ final class SunMapModel: ObservableObject {
     @Published var field: SunField?
     @Published var status: String = "Loading city…"
     @Published var error: String?
-    @Published var selectedDate: Date = Date()
+    @Published var selectedDate: Date = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        return calendar.date(bySettingHour: 13, minute: 0, second: 0, of: Date())!
+    }()
     @Published var daylight: (sunrise: Date, sunset: Date)?
     @Published var overlayVersion = 0
     @Published var center: CLLocationCoordinate2D?
@@ -18,7 +22,7 @@ final class SunMapModel: ObservableObject {
     @Published var outsideCity = false
     @Published var cityName: String = ""
     /// Auto = live forecast; the others freeze the sky for "what if it clears up".
-    @Published var skyMode: SkyMode = .auto
+    @Published var skyMode: SkyMode = .clear
     /// Bumped when the map should move to `center` (the first real fix, "demo area").
     @Published var recenterRequest = 0
     /// True when the field covers only the middle of a zoomed-out screen.

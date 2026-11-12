@@ -1,5 +1,30 @@
 # Sun Map
 
+## Walk prototype (`prototype/sf-sunny-walks`)
+
+This branch adds a San Francisco walk demo: type into **Starting point** and **Destination**
+at the top of the map, pick a native address/landmark suggestion, and choose **Fastest** (blue), **Balanced** (purple),
+or **Sunniest** (orange) in the horizontal bottom row. Each card shows estimated minutes
+and sidewalk sunlight; all paths are previewed, with the selected path drawn on top.
+The existing time slider remains and defaults to **1 PM today in San Francisco**.
+There is no sky picker or sun/speed slider: this demo always assumes clear sky.
+
+Routes come from the bundled public walking graph, not online directions. Native Apple
+place search requires connectivity; entering `latitude,longitude` works offline.
+Endpoints must be within 150 m of the built network. ETAs assume 1.4 m/s; sunlight is a
+length-weighted, clear-sky snapshot at the selected time, excluding crossings. Sunniest
+chooses the highest sunlight percentage among sampled paths within 75% extra distance.
+Balanced chooses a Pareto middle ground, minimizing normalized extra time and lost sun.
+It appears only when its displayed minutes are fewer than Sunniest and its displayed
+sunlight percentage exceeds Fastest; otherwise it is omitted. Fastest and Sunniest can
+share a path when no sunlight improvement exists (the UI says so).
+This is not turn-by-turn navigation or an arrival-time weather prediction.
+
+Like Water's native place-search pattern and crossing-safe sun objective are adapted
+here; its full corridor, arrival-time timeline and hill/crossing pace model remain there.
+`WalkRouterTests`, `RealCityTests.testSanFranciscoWalkOptions` and `WalkPlannerUITests`
+cover this branch. The documentation below describes the original sun-map main line.
+
 An iOS app that colours the sidewalks around you by sun: which side of which street is
 lit right now, or at any 15-minute step of the day, with the live sky (Open-Meteo, and a
 satellite-fog experiment) fading the palette as cloud takes the beam away. No

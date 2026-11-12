@@ -40,18 +40,6 @@ final class SunMapUITests: XCTestCase {
         app.launch()
     }
 
-    private var skyStatus: XCUIElement { app.staticTexts["skyStatus"] }
-
-    private func waitForSky(timeout: TimeInterval = 20) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if skyStatus.exists, !skyStatus.label.isEmpty { return }
-            usleep(300_000)
-        }
-        shoot("FAILURE-no-sky-status")
-        XCTFail("sky status never appeared")
-    }
-
     /// 3rd & Howard through the day: morning, midday, late afternoon.
     func testSoMaSunThroughTheDay() throws {
         let stops: [(String, String)] = [
@@ -95,7 +83,9 @@ final class SunMapUITests: XCTestCase {
         let forward = app.buttons["stepForward"]
         XCTAssertTrue(forward.waitForExistence(timeout: 10))
         for _ in 0..<12 { forward.tap() }                       // +3 hours
-        usleep(2_500_000)
+        let changed = NSPredicate(format: "label != %@", readoutBefore)
+        expectation(for: changed, evaluatedWith: readout)
+        waitForExpectations(timeout: 30)
         shoot("sunmap-31-after-scrub")
         let timeAfter = timeLabel.label
         XCTAssertNotEqual(timeAfter, timeBefore, "stepping must move the time")
@@ -107,52 +97,17 @@ final class SunMapUITests: XCTestCase {
         XCTAssertNotEqual(timeLabel.label, timeAfter, "Now must leave the stepped time")
     }
 
-    // MARK: - Weather
+    // MARK: - Clear-sky prototype
 
-    /// Under overcast there is no beam: the status says so and the palette is flat.
-    func testOvercastFlattensTheSky() throws {
+    func testPrototypeAssumesClearSkyEvenWithForecastOverride() throws {
         launch(at: "37.78415,-122.40060", date: "2026-09-23T20:00:00Z", sky: "overcast")
-        waitForField(); waitForSky()
-        shoot("sunmap-40-overcast")
-        XCTAssertEqual(skyStatus.label, "Overcast · no direct sun")
-        XCTAssertTrue(stats.label.contains("sky 0.00 overcast"), stats.label)
-    }
-
-    /// Two weathers at once: fog on the west side, sun in the Mission, and the app
-    /// says which one you are standing in.
-    func testFogWestSplitsTheCity() throws {
-        launch(at: "37.7605,-122.4950", date: "2026-09-23T20:00:00Z", sky: "fog-west")   // Sunset, Judah & 40th
-        waitForField(); waitForSky()
-        shoot("sunmap-41-fog-west-sunset")
-        let west = skyStatus.label
-        XCTAssertEqual(west, "Fog · no direct sun here · sun nearby")
-        app.terminate()
-
-        launch(at: "37.7599,-122.4148", date: "2026-09-23T20:00:00Z", sky: "fog-west")   // Mission, 20th & Valencia
-        waitForField(); waitForSky()
-        shoot("sunmap-42-fog-west-mission")
-        let east = skyStatus.label
-        XCTAssertEqual(east, "Clear sky here · fog nearby")
-        XCTAssertNotEqual(west, east)
-    }
-
-    /// The picker overrides the forecast: "what if it clears up" and back.
-    func testSkyPickerOverridesTheForecast() throws {
-        launch(at: "37.78415,-122.40060", date: "2026-09-23T20:00:00Z", sky: "clear")
-        waitForField(); waitForSky()
-        XCTAssertEqual(skyStatus.label, "Clear sky")
-        let picker = app.segmentedControls["skyPicker"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 10))
-        picker.buttons["Cloudy"].tap()
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline, !skyStatus.label.contains("set by you") { usleep(300_000) }
-        shoot("sunmap-43-picker-cloudy")
-        XCTAssertEqual(skyStatus.label, "Overcast · no direct sun (set by you)")
-        XCTAssertTrue(stats.label.contains("sky 0.00 override"), stats.label)
-        picker.buttons["Auto"].tap()
-        let back = Date().addingTimeInterval(15)
-        while Date() < back, skyStatus.label.contains("set by you") { usleep(300_000) }
-        XCTAssertEqual(skyStatus.label, "Clear sky")
+        waitForField()
+        let complete = NSPredicate(format: "label CONTAINS %@", "sky 1.00 override")
+        expectation(for: complete, evaluatedWith: stats)
+        waitForExpectations(timeout: 30)
+        XCTAssertTrue(app.staticTexts["clearSkyNote"].exists)
+        XCTAssertFalse(app.segmentedControls["skyPicker"].exists)
+        XCTAssertTrue(stats.label.contains("sky 1.00 override"), stats.label)
     }
 
     // MARK: - The whole screen, and the user's own location

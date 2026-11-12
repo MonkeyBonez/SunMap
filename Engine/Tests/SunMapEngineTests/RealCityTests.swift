@@ -65,10 +65,46 @@ final class RealCityTests: XCTestCase {
         for f in c.graph.edgeFlags {
             XCTAssertFalse(f & EdgeFlag.sidewalk != 0 && f & EdgeFlag.streetSidewalkTag != 0)
         }
+
         XCTAssertGreaterThan(tagged, 1_000)
         print("components \(c.graph.componentSizes.count), largest \(c.graph.componentSizes.max()!)")
         XCTAssertGreaterThan(crossings, 10_000)
         XCTAssertGreaterThan(sidewalks, 10_000)
+    }
+
+    func testSanFranciscoWalkOptions() throws {
+        let c = try city()
+        let router = WalkRouter(graph: c.graph)
+        let start = try router.snap(latitude: 37.78415, longitude: -122.40060)
+        let end = try router.snap(latitude: 37.7936, longitude: -122.3958)
+        let date = ISO8601DateFormatter().date(from: "2026-11-12T21:00:00Z")!
+        let sun = Solar.position(latitude: 37.78415, longitude: -122.40060, date: date)
+        var scorer = SunScorer(buildings: c.buildings)
+        var stamp: Int32 = 0
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let routes = try router.routes(from: start, to: end) { edge in
+            let e = Int(edge), a = Int(c.graph.edgeA[e]), b = Int(c.graph.edgeB[e])
+            stamp += 6
+            return Double(scorer.score(aLat: c.graph.nodeLat[a], aLon: c.graph.nodeLon[a],
+                                      bLat: c.graph.nodeLat[b], bLon: c.graph.nodeLon[b],
+                                      sun: sun, stamp: stamp))
+        }
+        let sunniest = try XCTUnwrap(routes.last)
+        XCTAssertEqual(sunniest.kind, .sunniest)
+        XCTAssertLessThanOrEqual(sunniest.metres, routes[0].metres * 1.75 + 0.001)
+        XCTAssertGreaterThanOrEqual(sunniest.sunFraction, routes[0].sunFraction)
+        if let balanced = routes.first(where: { $0.kind == .balanced }) {
+            XCTAssertLessThan(balanced.minutes, sunniest.minutes)
+            XCTAssertGreaterThan(balanced.sunPercent, routes[0].sunPercent)
+        }
+        for route in routes {
+            XCTAssertTrue(route.edges.allSatisfy { !c.graph.isPrivate(Int($0)) })
+            XCTAssertEqual(route.nodes.first, start)
+            XCTAssertEqual(route.nodes.last, end)
+            XCTAssertGreaterThan(route.sunFraction, 0)
+            print("SF WALK \(route.kind.rawValue): \(route.metres) m, \(route.minutes) min, \(route.sunFraction * 100)% sunlight")
+        }
+        print("SF WALK search: \((CFAbsoluteTimeGetCurrent() - t0) * 1000) ms, \(stamp / 6) scored edges")
     }
 
     func testExploreHowardStreetSidewalks() throws {

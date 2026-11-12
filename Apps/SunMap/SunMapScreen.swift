@@ -4,20 +4,32 @@ import SunMapEngine
 
 struct SunMapScreen: View {
     @StateObject private var model = SunMapModel()
+    @StateObject private var walks = WalkPlanner()
+    @State private var editingEndpoint = false
     @ObservedObject private var loadState = CityLoadState.shared
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            SunMapMapView(model: model)
+            SunMapMapView(model: model, walks: walks)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer()
-                panel
+                if !editingEndpoint { panel }
             }
         }
-        .overlay(alignment: .top) { topStatus }
+        .overlay(alignment: .top) {
+            VStack(spacing: 6) {
+                WalkEndpointBar(location: model.location.coordinate, onPick: { place, isStart in
+                    model.userMovedMap = true
+                    walks.set(place, asStart: isStart, date: model.selectedDate)
+                }, onEditingChange: { editingEndpoint = $0 })
+                if !editingEndpoint { topStatus }
+            }
+            .padding(.top, 8)
+        }
         .onReceive(model.location.$coordinate.compactMap { $0 }) { model.onLocationUpdate($0) }
+        .onChange(of: model.selectedDate) { _, date in walks.refresh(date: date) }
         .onAppear {
             if model.center == nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { model.useFallbackCenter() }
@@ -84,6 +96,7 @@ struct SunMapScreen: View {
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 10) {
+            walkControls
             HStack(alignment: .firstTextBaseline) {
                 Text(model.timeText)
                     .font(.title2.weight(.semibold).monospacedDigit())
@@ -119,21 +132,9 @@ struct SunMapScreen: View {
 
             legend
 
-            Picker("Sky", selection: Binding(get: { model.skyMode }, set: { model.setSkyMode($0) })) {
-                ForEach(SkyMode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("skyPicker")
-
-            if !model.skyStatus.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: skyIcon)
-                    Text(model.skyStatus)
-                }
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(model.beamStrength < 0.15 ? .secondary : .primary)
-                .accessibilityIdentifier("skyStatus")
-            }
+            Text("Clear sky · sidewalk sunlight at selected time · ETA at 1.4 m/s")
+                .font(.caption2).foregroundStyle(.secondary)
+                .accessibilityIdentifier("clearSkyNote")
 
             if let field = model.field {
                 Text(Self.statsLine(field, beam: model.beamStrength))
@@ -142,10 +143,54 @@ struct SunMapScreen: View {
                     .accessibilityIdentifier("sunStats")
                     .accessibilityValue(String(format: "%.4f,%.4f · stitch %@", field.center.latitude, field.center.longitude, field.stitchID))
             }
+
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .padding(10)
+    }
+
+    private var walkControls: some View {
+        VStack(spacing: 8) {
+            if walks.isComputing {
+                ProgressView("Finding sunny walks…").font(.caption)
+                    .accessibilityIdentifier("walkProgress")
+            }
+            if let error = walks.error {
+                Text(error).font(.caption).foregroundStyle(.red)
+                    .accessibilityIdentifier("walkError")
+            }
+            HStack(spacing: 6) {
+                ForEach(walks.previews) { preview in
+                    let kind = preview.route.kind
+                    Button { walks.select(kind) } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color(kind.color)).frame(width: 7, height: 7)
+                                Text(kind.rawValue).font(.caption.weight(.semibold))
+                            }
+                            Text("\(preview.route.minutes) min").font(.headline.monospacedDigit())
+                            Text("\(preview.route.sunPercent)% sunlight")
+                                .font(.caption.monospacedDigit())
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(9)
+                        .background(Color(kind.color).opacity(walks.selected == kind ? 0.18 : 0.05),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(kind.color), lineWidth: walks.selected == kind ? 2 : 0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("route\(kind.rawValue)")
+                    .accessibilityLabel("\(kind.rawValue), \(preview.route.minutes) minutes, \(preview.route.sunPercent) percent sunlight")
+                    .accessibilityAddTraits(walks.selected == kind ? .isSelected : [])
+                }
+            }
+            if walks.sharedPaths {
+                Text("Some options share the same best path at this time.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
     }
 
     /// One line the UI tests read: what was scored, how, from where.
@@ -166,16 +211,6 @@ struct SunMapScreen: View {
         if let b = field.built { line += " · build " + MetroIndex.buildKey(b) }
         line += " · cache \(field.cacheBytes / 1_000_000) MB"
         return line
-    }
-
-    private var skyIcon: String {
-        guard let sky = model.field?.sky else { return "questionmark.circle" }
-        switch sky.regime {
-        case .clear: return "sun.max.fill"
-        case .hazy: return "sun.haze.fill"
-        case .broken: return "cloud.sun.fill"
-        case .overcast: return sky.lowCloud >= 0.6 ? "cloud.fog.fill" : "cloud.fill"
-        }
     }
 
     private var legend: some View {

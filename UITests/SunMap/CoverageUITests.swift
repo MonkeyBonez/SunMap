@@ -43,7 +43,7 @@ final class CoverageUITests: XCTestCase {
         shoot("denver-not-built")
         XCTAssertTrue(app.staticTexts["No sun data here yet"].exists)
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Nearest with sun data'")).firstMatch.exists)
-        XCTAssertEqual(app.staticTexts["skyStatus"].label, "Clear sky")
+        XCTAssertTrue(app.staticTexts["clearSkyNote"].exists)
         XCTAssertTrue(app.staticTexts["sunReadout"].label.contains("el "), app.staticTexts["sunReadout"].label)
         XCTAssertFalse(app.buttons["requestCoverageButton"].exists, "no endpoint configured, so no button")
         XCTAssertFalse(app.staticTexts["sunStats"].exists, "nothing to paint")

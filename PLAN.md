@@ -1,5 +1,20 @@
 # Sun Map — where it stands
 
+## Walk demo checkpoint (2026-11-12, `prototype/sf-sunny-walks` only)
+
+- [x] Editable start/end inputs at the top, native address/landmark autocomplete,
+  routing over the bundled San Francisco walking network.
+- [x] Horizontal Fastest / Balanced / Sunniest cards with minutes and sidewalk sun %.
+- [x] Blue / purple / orange map previews; selection highlights its path.
+- [x] Show Balanced only for a genuine middle trade-off: fewer displayed minutes than
+  Sunniest and more displayed sunlight than Fastest; omit it otherwise.
+- [x] Keep the time scrubber, default to 1 PM Pacific; remove sky picker, assume clear sky.
+- [x] Engine and simulator checks; signed installation and the full selection flow on
+  the connected iPhone. Main remains unchanged.
+
+Prototype semantics and measured route comparison: LEARNINGS §16. Production routing
+fidelity stays deferred in BACKLOG. The rest of this plan describes the main line.
+
 Split from `MonkeyBonez/LikeWater` on 2026-10-01 (tag `sunmap-split`; that repo's
 `PLAN.md` has the full history of the round that built what is below). Sun Map is now the
 main line of work; Like Water's route/ETA/corridor work is parked there.

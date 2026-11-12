@@ -681,6 +681,48 @@ Nothing in the pipeline or the app needed a code change to go abroad. One defaul
   coverage by footprint size before trusting the fill (known share per size bin from the
   cached `metro_<id>__buildings_overture.pkl`).
 
+## 16. San Francisco walk prototype (2026-11-12, separate branch)
+
+`prototype/sf-sunny-walks` adds three selectable walk cards without changing main.
+The owner asked for clear sky only and a 1 PM Pacific default, keeping the time scrubber
+but removing both the sky picker and any sun/speed slider.
+
+- **Existing bundles still route.** `RealCityTests.testSanFranciscoWalkOptions` snaps
+  `(37.78415,-122.40060)` to `(37.7936,-122.3958)` and searches the public graph. At
+  2026-11-12 13:00 PST, Fastest is **1,514.5 m / 18 min / 27.5% sidewalk sunlight**;
+  Balanced is **1,585.3 m / 19 min / 38.7%** and Sunniest is
+  **1,739.4 m / 21 min / 52.3%**. The final debug Swift engine test measured **808 ms**,
+  scoring **11,793 edges**, excluding bundle load.
+- **A duplicated endpoint is not Balanced.** The initial three-weight search often
+  labelled the Sunniest path Balanced too. The owner rejected that. Sampling thirteen
+  nonzero weights (0.1–9) finds intermediate candidates; discard Pareto-dominated paths
+  and minimize squared normalized extra time plus lost sunlight for the middle card.
+  Require both fewer *displayed minutes* than Sunniest and more *displayed sunlight %*
+  than Fastest. Otherwise omit Balanced, including at night. Sub-second or sub-percent
+  gains hidden by rounding do not qualify. All alternatives stay within 75% extra
+  distance; Fastest and Sunniest may still coincide when there is no sun benefit.
+- **Reuse the crossing lesson, not just the labels.** Like Water's `RouteEngine` does
+  not discount sun on crossings (otherwise a sunny route zigzags across roads).
+  This prototype adapts that cost rule and its `PlaceSearch` native lookup pattern.
+  Private edges are excluded, snaps are limited to 150 m, and unsupported or
+  disconnected endpoints produce visible errors.
+- **Keep the estimate honest.** Sunlight here is a length-weighted sidewalk snapshot
+  at the selected time, not light integrated over the walk; crossings are excluded.
+  ETA is constant 1.4 m/s, without hill or crossing-wait corrections. Like Water's
+  corridor, pace and arrival-time timeline are not imported for this demo.
+- **Validate asynchronous results, not just initial text.** The field streams partials
+  before its sky source arrives; the scrubber updates its time before rescoring finishes.
+  UI checks wait for the final source/readout. The MapKit wrapper is an accessibility
+  `Other`, not the nested `Map`; its value confirms preview count and selection.
+  `swift test` passes 56 engine tests; six targeted simulator UI tests cover native SF
+  landmark search, selections, time changes, nighttime and unsupported endpoints.
+  All four walk UI tests also pass on the connected physical iPhone.
+- **Location names are the input, not a separate search form.** From/To now live at
+  the top as editable fields with native completion titles and address subtitles.
+  UI checks resolve **340 Fremont St**, **LinkedIn / 222 2nd St**, and a **Chase Center**
+  autocomplete suggestion into routable SF endpoints; coordinate entry still works
+  offline. Route fitting leaves room for both the top inputs and bottom cards.
+
 ## 7. Testing lessons that cost us
 
 - **Two UI tests passed for a week while testing nothing.** An

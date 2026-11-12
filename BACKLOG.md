@@ -121,3 +121,14 @@ shade into the neighbour. **What:** a `--sun` profile in `build_metro.py` that k
 component, skips interest (write zeros, the format stays v3), and keeps building-only
 tiles. **Trigger:** the next full rebuild of the metros (no format change, but every tile
 changes, so do it once). **Effort:** ½ day + rebuild time (~1 h for the six metros).
+
+## Promote the SF walk demo beyond a prototype
+
+The separate `prototype/sf-sunny-walks` branch uses a clear-sky snapshot, constant
+1.4 m/s ETAs and sampled weighted shortest paths (LEARNINGS §16). Before presenting it
+as navigation, port Like Water's corridor, hill/crossing pace model and arrival-time sun
+timeline, and validate bounded alternative selection against those oracles. Keep the
+three-card UI; do not restore a trade-off slider unasked.
+**Why:** a sunset walk or a steep SF hill can differ materially from a departure-time
+snapshot and flat-speed ETA. **Trigger:** owner wants to graduate the demo to a walking
+product. **Effort:** 1–2 days plus on-foot spot checks.

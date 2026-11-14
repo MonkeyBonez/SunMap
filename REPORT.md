@@ -1,19 +1,19 @@
 # GOES fog POC — running report
 
-Updated 2026-11-14T02:29+00:00. Daytime (9 am–5 pm Pacific) scans only.
+Updated 2026-11-14T19:58+00:00. Daytime (9 am–5 pm Pacific) scans only.
 
 | metric | value |
 |---|---|
-| days | 14 |
-| cell_times | 8192 |
-| agreement | 0.784423828125 |
-| station_disagreements | 88 |
-| goes_right_share | 0.3409090909090909 |
-| om_right_share | 0.6590909090909091 |
-| median_latency_min | 1.975 |
-| median_delivery_min | 101.0 |
-| fog_mornings | 1 |
-| burnoff_error_min | {"goes": 135, "om": 135} |
+| days | 15 |
+| cell_times | 8544 |
+| agreement | 0.7734082397003745 |
+| station_disagreements | 94 |
+| goes_right_share | 0.3191489361702128 |
+| om_right_share | 0.6808510638297872 |
+| median_latency_min | 1.9666666666666666 |
+| median_delivery_min | 100.8 |
+| fog_mornings | 2 |
+| burnoff_error_min | {"goes": 112.5, "om": 82.5} |
 | decision | "do not build (forecast is good enough)" |
 
 
